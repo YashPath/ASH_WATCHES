@@ -1,0 +1,59 @@
+# Production-shaped stack. Copy .env.example to .env and replace every CHANGE_ME first.
+name: ash
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_USER: ash, POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}", POSTGRES_DB: ash }
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [backend]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U ash -d ash"], interval: 5s, timeout: 3s, retries: 10 }
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes: [redisdata:/data]
+    networks: [backend]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, timeout: 3s, retries: 10 }
+  chroma:
+    image: chromadb/chroma:1.5.9
+    restart: unless-stopped
+    volumes: [chromadata:/data]
+    environment: { IS_PERSISTENT: "TRUE", PERSIST_DIRECTORY: /data, ANONYMIZED_TELEMETRY: "FALSE" }
+    networks: [chroma_internal]
+  chroma-gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    environment: { CHROMA_AUTH_TOKEN: "${CHROMA_AUTH_TOKEN:?set CHROMA_AUTH_TOKEN}" }
+    volumes: ["./infra/chroma/gateway.conf.template:/etc/nginx/templates/default.conf.template:ro"]
+    depends_on: [chroma]
+    networks: [chroma_internal, backend]
+  api:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: "postgresql://ash:${POSTGRES_PASSWORD}@postgres:5432/ash?schema=public"
+      DIRECT_URL: "postgresql://ash:${POSTGRES_PASSWORD}@postgres:5432/ash?schema=public"
+      REDIS_URL: redis://redis:6379
+      CHROMA_URL: http://chroma-gateway:8000
+    depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
+    networks: [backend, edge]
+  web:
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    restart: unless-stopped
+    networks: [edge]
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    profiles: ["local"]
+    ports: ["80:80"]
+    volumes: ["./infra/nginx/edge.conf:/etc/nginx/conf.d/default.conf:ro"]
+    depends_on: [api, web]
+    networks: [edge]
+networks:
+  backend: {}
+  edge: {}
+  chroma_internal: { internal: true }
+volumes: { pgdata: {}, redisdata: {}, chromadata: {} }

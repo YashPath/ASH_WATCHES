@@ -1,0 +1,13 @@
+# Chroma 1.x has no simple static-token auth, so it is never exposed directly:
+# it lives on an internal-only network and is reachable only through this gateway, which demands a bearer token.
+map $http_authorization $token_ok { default 0; "Bearer ${CHROMA_AUTH_TOKEN}" 1; }
+server {
+  listen 8000;
+  location /api/v2/heartbeat { proxy_pass http://chroma:8000; }
+  location / {
+    if ($token_ok = 0) { return 401; }
+    client_max_body_size 8m;
+    proxy_pass http://chroma:8000;
+    proxy_set_header Host $host;
+  }
+}

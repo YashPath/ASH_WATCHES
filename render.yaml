@@ -1,0 +1,42 @@
+# Render Blueprint: the API only. The web app goes on Vercel (see docs/DEPLOY-FREE.md).
+# Free plan: the service sleeps after ~15 min idle, and disk is temporary (the seed re-creates demo images on every boot).
+services:
+  - type: web
+    name: ash-api
+    runtime: node
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @ash/api build
+    # No shell or pre-deploy hook on the free plan, so schema sync + demo data run at boot (both are idempotent).
+    startCommand: >-
+      cd apps/api &&
+      pnpm exec prisma db push --schema=../../prisma/schema.prisma --skip-generate &&
+      pnpm seed:demo &&
+      ( [ -z "$ADMIN_EMAIL" ] || pnpm create:admin ) &&
+      node dist/server.js
+    envVars:
+      - { key: NODE_VERSION, value: 22.12.0 }
+      - { key: NODE_ENV, value: production }
+      - { key: API_PORT, value: 10000 }
+      - { key: COOKIE_SECURE, value: "true" }
+      - { key: HIBP_ENABLED, value: "false" }
+      - { key: SEARCH_ENABLED, value: "false" }
+      - { key: EMBEDDING_PROVIDER, value: hash }
+      - { key: EMAIL_PROVIDER, value: smtp }
+      - { key: JWT_ACCESS_SECRET, generateValue: true }
+      - { key: MEDIA_SIGNING_SECRET, generateValue: true }
+      - { key: TOTP_ENCRYPTION_KEY, generateValue: true }
+      # You fill these in the Render dashboard (sync: false = asked on first deploy):
+      - { key: DATABASE_URL, sync: false }        # Neon pooled connection string
+      - { key: DIRECT_URL, sync: false }          # Neon direct connection string
+      - { key: REDIS_URL, sync: false }           # Upstash rediss:// URL
+      - { key: FRONTEND_ORIGIN, sync: false }     # https://<your-vercel-app>.vercel.app (no trailing slash)
+      - { key: API_PUBLIC_URL, sync: false }      # https://ash-api.onrender.com
+      - { key: SMTP_HOST, sync: false }
+      - { key: SMTP_PORT, value: "587" }
+      - { key: SMTP_USER, sync: false }
+      - { key: SMTP_PASSWORD, sync: false }
+      - { key: EMAIL_FROM, sync: false }          # e.g. ASH_ <you@yourdomain.com>, must be a sender verified at your SMTP provider
+      - { key: ADMIN_EMAIL, sync: false }         # optional: creates/promotes this admin at boot
+      - { key: ADMIN_PASSWORD, sync: false }      # optional, 12+ characters

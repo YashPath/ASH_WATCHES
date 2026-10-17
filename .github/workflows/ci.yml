@@ -1,0 +1,99 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+permissions: { contents: read }
+concurrency: { group: "ci-${{ github.ref }}", cancel-in-progress: true }
+
+env:
+  DATABASE_URL: postgresql://ash:ci_password_only@localhost:5432/ash_test?schema=public
+  DIRECT_URL: postgresql://ash:ci_password_only@localhost:5432/ash_test?schema=public
+  REDIS_URL: redis://localhost:6379
+
+jobs:
+  verify:
+    name: Typecheck, unit and integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: ash, POSTGRES_PASSWORD: ci_password_only, POSTGRES_DB: ash_test }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U ash" --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+      chroma:
+        image: chromadb/chroma:1.5.9
+        ports: ["8000:8000"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.15.5 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prisma validate --schema=./prisma/schema.prisma
+      # The repo ships incremental migrations only (no baseline); CI builds the schema directly. See prisma/BASELINE.md.
+      - run: pnpm exec prisma db push --schema=./prisma/schema.prisma --skip-generate
+      - run: pnpm --filter @ash/api typecheck
+      - run: pnpm --filter @ash/api test
+      - run: pnpm --filter @ash/api test:int
+      - run: pnpm --filter @ash/web typecheck
+      - run: pnpm --filter @ash/web test
+      - name: Dependency audit (production deps, high severity)
+        run: pnpm audit --prod --audit-level=high
+
+  e2e:
+    name: Browser tests (Playwright)
+    runs-on: ubuntu-latest
+    needs: verify
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: ash, POSTGRES_PASSWORD: ci_password_only, POSTGRES_DB: ash_test }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U ash" --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+      chroma:
+        image: chromadb/chroma:1.5.9
+        ports: ["8000:8000"]
+    env:
+      NODE_ENV: development
+      FRONTEND_ORIGIN: http://localhost:3000
+      API_PUBLIC_URL: http://localhost:3000
+      JWT_ACCESS_SECRET: Ci_Jwt_Secret_Only_7f3!kQ9zX2mV8pL4wR6tY1uB5nC0aD
+      MEDIA_SIGNING_SECRET: Ci_Media_Secret_Only_2h8!Nw4jT7yK1xZ9qM5vP3rA6bE
+      TOTP_ENCRYPTION_KEY: Ci_Totp_Key_Only_9d4!Gs1fH6kJ3lQ8zX2cV7bN5mW0tY
+      HIBP_ENABLED: "false"
+      EMBEDDING_PROVIDER: hash
+      SEARCH_ENABLED: "true"
+      PUBLIC_MEDIA_DIR: ./public-media
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.15.5 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prisma db push --schema=./prisma/schema.prisma --skip-generate
+      - run: pnpm --filter @ash/api seed:demo
+      - run: pnpm --filter @ash/api search:reindex
+      - name: Start API
+        run: |
+          pnpm --filter @ash/api exec tsx src/server.ts > api.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:4000/ready && break; sleep 1; done
+      - name: Build and start web
+        run: |
+          pnpm --filter @ash/web build
+          pnpm --filter @ash/web start > web.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:3000 >/dev/null && break; sleep 1; done
+      - run: pnpm --filter @ash/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @ash/web e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: playwright-report, path: "apps/web/playwright-report\napps/web/test-results\napi.log\nweb.log" }

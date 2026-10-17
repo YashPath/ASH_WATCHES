@@ -1,0 +1,475 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+  SUPER_ADMIN
+}
+enum Gender {
+  MEN
+  WOMEN
+  UNISEX
+}
+enum MovementType {
+  QUARTZ
+  AUTOMATIC
+  MANUAL
+  SOLAR
+  SMART
+}
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+enum PaymentStatus {
+  PENDING
+  REQUIRES_ACTION
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+enum PaymentProvider {
+  STRIPE
+  COD
+}
+enum AddressType {
+  SHIPPING
+  BILLING
+  BOTH
+}
+enum AuditSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+enum EmailActionType {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+  ADMIN_MFA_ENROLL
+}
+enum MediaAssetKind {
+  IMAGE
+  GLB
+}
+
+model User {
+  id                  String             @id @default(uuid()) @db.Uuid
+  email               String             @unique @db.VarChar(320)
+  passwordHash        String             @db.VarChar(255)
+  firstName           String             @db.VarChar(100)
+  lastName            String             @db.VarChar(100)
+  phone               String?            @db.VarChar(30)
+  role                UserRole           @default(CUSTOMER)
+  emailVerifiedAt     DateTime?
+  twoFactorEnabled    Boolean            @default(false)
+  twoFactorSecret     String?
+  pendingTwoFactorSecret String?
+  failedLoginAttempts Int                @default(0)
+  lockedUntil         DateTime?
+  totpFailureCount    Int                @default(0)
+  totpLockedUntil     DateTime?
+  lastTotpTimeStep    BigInt?
+  deletedAt           DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  refreshTokens       RefreshToken[]
+  addresses           Address[]
+  cart                Cart?
+  orders              Order[]
+  reviews             Review[]
+  wishlistItems       WishlistItem[]
+  auditLogs           AuditLog[]         @relation("AuditActor")
+  emailActionTokens   EmailActionToken[]
+  mediaAssets         MediaAsset[]
+  @@index([role, deletedAt])
+  @@index([createdAt])
+  @@index([lockedUntil])
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  tokenHash  String   @unique @db.VarChar(255)
+  familyId   String   @db.Uuid
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  replacedBy String?  @db.Uuid
+  mfaAuthenticated Boolean @default(false)
+  userAgent  String?  @db.VarChar(500)
+  ipAddress  String?  @db.VarChar(64)
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  @@index([expiresAt])
+}
+
+model Address {
+  id          String      @id @default(uuid()) @db.Uuid
+  userId      String      @db.Uuid
+  type        AddressType @default(SHIPPING)
+  fullName    String      @db.VarChar(150)
+  phone       String      @db.VarChar(30)
+  line1       String      @db.VarChar(200)
+  line2       String?     @db.VarChar(200)
+  city        String      @db.VarChar(100)
+  state       String      @db.VarChar(100)
+  postalCode  String      @db.VarChar(20)
+  countryCode String      @default("IN") @db.Char(2)
+  isDefault   Boolean     @default(false)
+  deletedAt   DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  user        User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  orders      Order[]
+  @@index([userId, deletedAt])
+  @@index([postalCode])
+}
+
+model Brand {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String    @unique @db.VarChar(120)
+  slug        String    @unique @db.VarChar(140)
+  description String?   @db.Text
+  logoUrl     String?
+  websiteUrl  String?
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+  @@index([isActive, deletedAt])
+}
+
+model Category {
+  id          String     @id @default(uuid()) @db.Uuid
+  name        String     @unique @db.VarChar(120)
+  slug        String     @unique @db.VarChar(140)
+  description String?    @db.Text
+  parentId    String?    @db.Uuid
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[] @relation("CategoryTree")
+  products    Product[]
+  @@index([parentId])
+  @@index([isActive])
+}
+
+model Product {
+  id                String         @id @default(uuid()) @db.Uuid
+  brandId           String         @db.Uuid
+  categoryId        String         @db.Uuid
+  name              String         @db.VarChar(180)
+  slug              String         @unique @db.VarChar(200)
+  sku               String         @unique @db.VarChar(80)
+  shortDescription  String?        @db.VarChar(500)
+  description       String         @db.Text
+  gender            Gender         @default(UNISEX)
+  movement          MovementType
+  caseSizeMm        Decimal        @db.Decimal(5, 2)
+  caseThicknessMm   Decimal?       @db.Decimal(5, 2)
+  waterResistanceM  Int            @default(30)
+  crystal            String?       @db.VarChar(80)
+  powerReserveHours Int?
+  basePrice         Int
+  compareAtPrice    Int?
+  currency          String         @default("INR") @db.Char(3)
+  status            ProductStatus  @default(DRAFT)
+  isFeatured        Boolean        @default(false)
+  tags              String[]       @default([])
+  specifications    Json           @default("{}")
+  deletedAt         DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  brand             Brand          @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  category          Category       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  variants          ProductVariant[]
+  images            ProductImage[]
+  models3D          Product3DModel[]
+  orderItems        OrderItem[]
+  reviews           Review[]
+  wishlistItems     WishlistItem[]
+  @@index([brandId, status, deletedAt])
+  @@index([categoryId, status])
+  @@index([basePrice])
+  @@index([status, isFeatured])
+  @@index([gender, movement])
+  @@index([createdAt])
+}
+
+model ProductVariant {
+  id             String    @id @default(uuid()) @db.Uuid
+  productId      String    @db.Uuid
+  sku            String    @unique @db.VarChar(100)
+  name           String    @db.VarChar(150)
+  strapMaterial  String    @db.VarChar(80)
+  strapColor     String    @db.VarChar(60)
+  dialColor      String    @db.VarChar(60)
+  caseMaterial   String    @db.VarChar(80)
+  caseColor      String    @db.VarChar(60)
+  price          Int
+  compareAtPrice Int?
+  stockQuantity  Int       @default(0)
+  lowStockAt     Int       @default(5)
+  weightGrams    Int?
+  isActive       Boolean   @default(true)
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  product        Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  cartItems      CartItem[]
+  orderItems     OrderItem[]
+  @@index([productId, isActive, deletedAt])
+  @@index([price])
+  @@index([stockQuantity])
+  @@index([strapMaterial, strapColor])
+  @@index([dialColor, caseMaterial, caseColor])
+}
+
+model ProductImage {
+  id        String   @id @default(uuid()) @db.Uuid
+  assetId   String?  @unique @db.Uuid
+  productId String   @db.Uuid
+  url       String
+  altText   String   @db.VarChar(250)
+  sortOrder Int      @default(0)
+  isPrimary Boolean  @default(false)
+  width     Int?
+  height    Int?
+  createdAt DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  asset     MediaAsset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  @@index([productId, sortOrder])
+  @@index([productId, isPrimary])
+}
+
+model Product3DModel {
+  id                String   @id @default(uuid()) @db.Uuid
+  assetId           String?  @unique @db.Uuid
+  productId         String   @db.Uuid
+  name              String   @db.VarChar(150)
+  glbUrl            String
+  dracoCompressed   Boolean  @default(false)
+  meshoptCompressed Boolean  @default(false)
+  fileSizeBytes     Int?
+  previewImageUrl   String?
+  modelVersion      Int      @default(1)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  asset             MediaAsset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  @@index([productId, isActive])
+}
+
+model Cart {
+  id        String     @id @default(uuid()) @db.Uuid
+  userId    String     @unique @db.Uuid
+  currency  String     @default("INR") @db.Char(3)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+}
+
+model CartItem {
+  id        String         @id @default(uuid()) @db.Uuid
+  cartId    String         @db.Uuid
+  variantId String         @db.Uuid
+  quantity  Int            @default(1)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  @@unique([cartId, variantId])
+  @@index([variantId])
+}
+
+model Order {
+  id                  String      @id @default(uuid()) @db.Uuid
+  orderNumber         String      @unique @db.VarChar(40)
+  userId              String      @db.Uuid
+  shippingAddressId   String?     @db.Uuid
+  status              OrderStatus @default(PENDING)
+  currency            String      @default("INR") @db.Char(3)
+  subtotal            Int
+  discountAmount      Int         @default(0)
+  shippingAmount      Int         @default(0)
+  taxAmount           Int         @default(0)
+  totalAmount         Int
+  customerNote        String?     @db.VarChar(1000)
+  cancellationReason  String?     @db.VarChar(500)
+  paidAt              DateTime?
+  shippedAt           DateTime?
+  deliveredAt         DateTime?
+  cancelledAt         DateTime?
+  checkoutStartedAt   DateTime?
+  manualReviewRequired Boolean    @default(false)
+  deletedAt           DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  user                User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  shippingAddress     Address?    @relation(fields: [shippingAddressId], references: [id], onDelete: SetNull)
+  items               OrderItem[]
+  payments            Payment[]
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id            String         @id @default(uuid()) @db.Uuid
+  orderId       String         @db.Uuid
+  productId     String         @db.Uuid
+  variantId     String         @db.Uuid
+  productName   String         @db.VarChar(180)
+  variantName   String         @db.VarChar(150)
+  sku           String         @db.VarChar(100)
+  quantity      Int
+  unitPrice     Int
+  lineTotal     Int
+  configuration Json           @default("{}")
+  createdAt     DateTime       @default(now())
+  order         Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  product       Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  variant       ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  @@index([orderId])
+  @@index([productId])
+  @@index([variantId])
+}
+
+model Payment {
+  id                      String          @id @default(uuid()) @db.Uuid
+  orderId                 String          @db.Uuid
+  provider                PaymentProvider @default(STRIPE)
+  status                  PaymentStatus   @default(PENDING)
+  amount                  Int
+  amountRefunded          Int             @default(0)
+  currency                String          @default("INR") @db.Char(3)
+  stripeCheckoutSessionId String?         @unique
+  stripePaymentIntentId   String?         @unique
+  lastStripeEventId       String?
+  checkoutAttempt         Int             @default(0)
+  checkoutExpiresAt       DateTime?
+  failureCode             String?         @db.VarChar(100)
+  failureMessage          String?         @db.VarChar(500)
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  order                   Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  @@index([orderId, status])
+  @@index([createdAt])
+}
+
+model Review {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  productId   String   @db.Uuid
+  rating      Int
+  title       String   @db.VarChar(150)
+  body        String   @db.VarChar(5000)
+  isVerified  Boolean  @default(false)
+  isPublished Boolean  @default(false)
+  moderatedAt DateTime?
+  moderatedBy String?  @db.Uuid
+  deletedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  @@unique([userId, productId])
+  @@index([productId, isPublished, createdAt])
+  @@index([userId, createdAt])
+}
+
+model WishlistItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  productId String   @db.Uuid
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  @@unique([userId, productId])
+  @@index([userId, createdAt])
+  @@index([productId])
+}
+
+model AuditLog {
+  id           String        @id @default(uuid()) @db.Uuid
+  actorUserId  String?       @db.Uuid
+  action       String        @db.VarChar(120)
+  resourceType String        @db.VarChar(100)
+  resourceId   String?       @db.VarChar(100)
+  severity     AuditSeverity @default(INFO)
+  requestId    String?       @db.VarChar(100)
+  ipAddress    String?       @db.VarChar(64)
+  metadata     Json          @default("{}")
+  createdAt    DateTime      @default(now())
+  actor        User?         @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  @@index([actorUserId, createdAt])
+  @@index([resourceType, resourceId, createdAt])
+  @@index([action, createdAt])
+  @@index([severity, createdAt])
+}
+
+model ProcessedStripeEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  eventId     String   @unique @db.VarChar(255)
+  eventType   String   @db.VarChar(120)
+  processedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  @@index([eventType, createdAt])
+}
+
+model EmailActionToken {
+  id        String          @id @default(uuid()) @db.Uuid
+  userId    String          @db.Uuid
+  type      EmailActionType
+  tokenHash String          @unique @db.VarChar(64)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime        @default(now())
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, type, expiresAt])
+  @@index([expiresAt])
+}
+
+model MediaAsset {
+  id           String        @id @default(uuid()) @db.Uuid
+  storageKey   String        @unique @db.VarChar(255)
+  publicStorageKey String?   @unique @db.VarChar(255)
+  publicUrl    String?       @db.VarChar(1000)
+  originalName String        @db.VarChar(200)
+  contentType  String        @db.VarChar(100)
+  sizeBytes    Int
+  kind         MediaAssetKind
+  uploadedById String?       @db.Uuid
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  uploadedBy   User?         @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  productImage ProductImage?
+  product3DModel Product3DModel?
+  @@index([kind, createdAt])
+  @@index([uploadedById, createdAt])
+}

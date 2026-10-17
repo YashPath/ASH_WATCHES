@@ -1,0 +1,33 @@
+{
+  "name": "ash-watch",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.5",
+  "engines": {
+    "node": ">=20.18.0"
+  },
+  "scripts": {
+    "api:dev": "pnpm --dir apps/api dev",
+    "api:build": "pnpm --dir apps/api build",
+    "api:typecheck": "pnpm --dir apps/api typecheck",
+    "db:generate": "pnpm exec prisma generate --schema=./prisma/schema.prisma",
+    "db:validate": "pnpm exec prisma validate --schema=./prisma/schema.prisma",
+    "db:migrate": "pnpm exec prisma migrate dev --schema=./prisma/schema.prisma",
+    "db:deploy": "pnpm exec prisma migrate deploy --schema=./prisma/schema.prisma",
+    "db:seed": "pnpm --filter @ash/api seed:demo",
+    "postinstall": "pnpm exec prisma generate --schema=./prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "prisma": "5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "@prisma/client": "5.22.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": "^8.5.23"
+    }
+  }
+}

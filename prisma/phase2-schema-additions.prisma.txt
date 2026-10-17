@@ -1,0 +1,55 @@
+// Merge these declarations/fields into the Phase 1 prisma/schema.prisma.
+// Add to User: emailActionTokens EmailActionToken[], mediaAssets MediaAsset[]
+// Add to RefreshToken: mfaAuthenticated Boolean @default(false)
+// Add to Order: manualReviewRequired Boolean @default(false)
+// Add to enums:
+
+enum EmailActionType {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+}
+
+enum MediaAssetKind {
+  IMAGE
+  GLB
+}
+
+model ProcessedStripeEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  eventId     String   @unique @db.VarChar(255)
+  eventType   String   @db.VarChar(120)
+  processedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([eventType, createdAt])
+}
+
+model EmailActionToken {
+  id        String          @id @default(uuid()) @db.Uuid
+  userId    String          @db.Uuid
+  type      EmailActionType
+  tokenHash String          @unique @db.VarChar(64)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime        @default(now())
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type, expiresAt])
+  @@index([expiresAt])
+}
+
+model MediaAsset {
+  id           String        @id @default(uuid()) @db.Uuid
+  storageKey   String        @unique @db.VarChar(255)
+  originalName String        @db.VarChar(200)
+  contentType  String        @db.VarChar(100)
+  sizeBytes    Int
+  kind         MediaAssetKind
+  uploadedById String?       @db.Uuid
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  uploadedBy   User?         @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([kind, createdAt])
+  @@index([uploadedById, createdAt])
+}
