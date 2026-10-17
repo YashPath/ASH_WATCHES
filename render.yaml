@@ -25,7 +25,8 @@ services:
       - { key: HIBP_ENABLED, value: "false" }
       - { key: SEARCH_ENABLED, value: "false" }
       - { key: EMBEDDING_PROVIDER, value: hash }
-      - { key: EMAIL_PROVIDER, value: smtp }
+      - { key: EMAIL_PROVIDER, value: console }   # demo: emails are printed to the log. For real mail set smtp + SMTP_* and remove DEMO_MODE.
+      - { key: DEMO_MODE, value: "true" }
       - { key: JWT_ACCESS_SECRET, generateValue: true }
       - { key: MEDIA_SIGNING_SECRET, generateValue: true }
       - { key: TOTP_ENCRYPTION_KEY, generateValue: true }
@@ -35,10 +36,6 @@ services:
       - { key: REDIS_URL, sync: false }           # Upstash rediss:// URL
       - { key: FRONTEND_ORIGIN, sync: false }     # https://<your-vercel-app>.vercel.app (no trailing slash)
       - { key: API_PUBLIC_URL, sync: false }      # https://ash-api.onrender.com
-      - { key: SMTP_HOST, sync: false }
       - { key: SMTP_PORT, value: "587" }
-      - { key: SMTP_USER, sync: false }
-      - { key: SMTP_PASSWORD, sync: false }
-      - { key: EMAIL_FROM, sync: false }          # e.g. ASH_ <you@yourdomain.com>, must be a sender verified at your SMTP provider
       - { key: ADMIN_EMAIL, sync: false }         # optional: creates/promotes this admin at boot
       - { key: ADMIN_PASSWORD, sync: false }      # optional, 12+ characters
