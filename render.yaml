@@ -7,7 +7,8 @@ services:
     plan: free
     region: singapore
     healthCheckPath: /health
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @ash/api build
+    # Not `corepack enable`: Render's bundled corepack fails signature checks ("Cannot find matching keyid").
+    buildCommand: npm install -g pnpm@9.15.5 && pnpm install --frozen-lockfile && pnpm --filter @ash/api build
     # No shell or pre-deploy hook on the free plan, so schema sync + demo data run at boot (both are idempotent).
     startCommand: >-
       cd apps/api &&
