@@ -8,7 +8,8 @@ services:
     region: singapore
     healthCheckPath: /health
     # Not `corepack enable`: Render's bundled corepack fails signature checks ("Cannot find matching keyid").
-    buildCommand: npm install -g pnpm@9.15.5 && pnpm install --frozen-lockfile && pnpm --filter @ash/api build
+    # NODE_ENV=production would make pnpm skip devDependencies (prisma, typescript, tsx), which the build and the start command need.
+    buildCommand: npm install -g pnpm@9.15.5 && NODE_ENV=development pnpm install --frozen-lockfile && pnpm --filter @ash/api build
     # No shell or pre-deploy hook on the free plan, so schema sync + demo data run at boot (both are idempotent).
     startCommand: >-
       cd apps/api &&
