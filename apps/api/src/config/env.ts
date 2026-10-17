@@ -25,6 +25,8 @@ const schema = z.object({
   REDIS_URL: z.string().default('redis://localhost:6379'),
   EMAIL_FROM: z.string().default('ASH_ <no-reply@example.com>'),
   EMAIL_PROVIDER: z.enum(['console', 'smtp']).default('console'),
+  // DEMO_MODE=true lets a production deployment print emails to the log instead of sending them (client demos only).
+  DEMO_MODE: z.enum(['true', 'false']).default('false'),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_USER: z.string().optional(),
@@ -96,8 +98,8 @@ if (configuredStripeMethods.length === 0 || new Set(configuredStripeMethods).siz
   throw new Error('STRIPE_PAYMENT_METHOD_TYPES must be a comma-separated subset of Stripe Checkout methods supported for INR: card, upi, netbanking.');
 }
 if (parsed.MEDIA_STORAGE_PROVIDER === 's3' && (!parsed.S3_BUCKET || !parsed.S3_ACCESS_KEY_ID || !parsed.S3_SECRET_ACCESS_KEY || !parsed.MEDIA_PUBLIC_BASE_URL)) throw new Error('S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY and MEDIA_PUBLIC_BASE_URL are required when MEDIA_STORAGE_PROVIDER=s3.');
-if (parsed.NODE_ENV === 'production' && parsed.EMAIL_PROVIDER !== 'smtp') throw new Error('EMAIL_PROVIDER=smtp is required in production.');
-if (parsed.NODE_ENV === 'production' && (!parsed.SMTP_HOST || !parsed.SMTP_USER || !parsed.SMTP_PASSWORD)) throw new Error('SMTP_HOST, SMTP_USER and SMTP_PASSWORD are required in production.');
+if (parsed.NODE_ENV === 'production' && parsed.DEMO_MODE !== 'true' && parsed.EMAIL_PROVIDER !== 'smtp') throw new Error('EMAIL_PROVIDER=smtp is required in production.');
+if (parsed.NODE_ENV === 'production' && parsed.DEMO_MODE !== 'true' && (!parsed.SMTP_HOST || !parsed.SMTP_USER || !parsed.SMTP_PASSWORD)) throw new Error('SMTP_HOST, SMTP_USER and SMTP_PASSWORD are required in production.');
 if (parsed.NODE_ENV === 'production' && !parsed.EMBEDDING_PROVIDER) throw new Error('EMBEDDING_PROVIDER must be set explicitly in production (openai, ollama or hash).');
 if (parsed.EMBEDDING_PROVIDER === 'openai' && !parsed.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai.');
 if (parsed.NODE_ENV === 'production' && new URL(parsed.CHROMA_URL).protocol === 'http:' && !['localhost', '127.0.0.1'].includes(new URL(parsed.CHROMA_URL).hostname) && !parsed.CHROMA_AUTH_TOKEN) throw new Error('CHROMA_AUTH_TOKEN is required in production when Chroma is reached over the network.');
